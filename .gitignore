@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+KEY_INFO.md
+*.local.md
+# The whole audit directory: run artifacts, at any depth. An earlier pattern
+# of audit/*.jsonl missed audit/attacks/*.jsonl and would have committed 34
+# files from a gate run. The directory is recreated at runtime.
+audit/

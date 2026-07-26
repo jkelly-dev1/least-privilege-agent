@@ -1,0 +1,1 @@
+An AI agent that cannot exceed its grant, even when the data it reads tells it to. Deny-by-default policy, purpose binding, provenance tagging, opaque handles and an egress allowlist, with a hash-chained decision log. 31-payload attack corpus as the CI gate, and tests that measure which control covers which attack class.

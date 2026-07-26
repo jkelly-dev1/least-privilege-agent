@@ -1,0 +1,15 @@
+[project]
+name = "least-privilege-agent"
+version = "0.1.0"
+description = "Bounding the blast radius of an AI agent: it cannot exceed its grant, even when the data it reads tells it to."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "James Kelly" }]
+dependencies = ["pydantic>=2.7,<3", "PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

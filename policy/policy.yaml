@@ -1,0 +1,75 @@
+# Grants and egress rules for the worked support-agent scenario.
+#
+# Deny by default: an action not described here is refused. There is no
+# wildcard subject and no inheritance. A policy that grants nothing is valid.
+#
+# Every constraint name is checked at load time, so a typo widens nothing: it
+# fails at startup.
+
+grants:
+  # Reading an order is permitted for support work. The record still comes back
+  # with sensitive fields replaced by handles; this grant governs access to the
+  # record, not release of the values inside it.
+  - id: support-read-orders
+    subject: support_agent
+    purpose: customer_remediation
+    resource: order/*
+    action: read_record
+
+  # Notifying a customer. The destination allowlist below decides where a
+  # message may actually go; this grant only says the agent may send one.
+  - id: support-notify-customer
+    subject: support_agent
+    purpose: customer_notification
+    resource: order/*
+    action: send_message
+    constraints:
+      max_recipients: 1
+
+  # Internal notes: no egress, so no destination check applies.
+  - id: support-write-notes
+    subject: support_agent
+    purpose: customer_remediation
+    resource: order/*
+    action: write_note
+
+  # The tool that moves money. Three separate limits, each with its own test:
+  # a per-call cap, a per-session ceiling that four small refunds cannot creep
+  # past, and a threshold above which a human decides.
+  - id: support-refund-small
+    subject: support_agent
+    purpose: customer_remediation
+    resource: order/*
+    action: issue_refund
+    constraints:
+      max_amount: 50.00
+      currency: USD
+      per_session_total: 100.00
+      require_human_approval_above: 25.00
+
+  # A second subject, to show that purpose and subject are both real
+  # discriminators rather than decoration.
+  - id: auditor-read-orders
+    subject: auditor
+    purpose: compliance_review
+    resource: order/*
+    action: read_record
+
+egress:
+  # Where a message may be delivered. Anything else is refused even when the
+  # send action itself is granted.
+  allowed_recipients:
+    - "*@acme-customers.example"
+    - support-archive@acme.example
+  allowed_hosts:
+    - api.acme.example
+
+  # Which handle-backed fields may be resolved for which destination. A card
+  # number is resolvable for nobody here, which is why the worked scenario's
+  # injected "forward the card number" instruction fails twice over.
+  resolvable_fields:
+    "*@acme-customers.example":
+      - email
+    support-archive@acme.example:
+      - email
+      - phone
