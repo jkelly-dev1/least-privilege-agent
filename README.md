@@ -166,7 +166,8 @@ repos follow the same discipline of claims mapped to tests:
 [citation-abstention-rag](https://github.com/jkelly-dev1/citation-abstention-rag),
 [typed-agent-service](https://github.com/jkelly-dev1/typed-agent-service),
 [agentic-review-gate](https://github.com/jkelly-dev1/agentic-review-gate),
-[temporal-multi-agent](https://github.com/jkelly-dev1/temporal-multi-agent).
+[temporal-multi-agent](https://github.com/jkelly-dev1/temporal-multi-agent),
+[federated-retrieval-router](https://github.com/jkelly-dev1/federated-retrieval-router).
 
 [prompt-injection-benchmark](https://github.com/jkelly-dev1/prompt-injection-benchmark) measures the
 control this repo builds: it runs a synthetic attack corpus against defenses
