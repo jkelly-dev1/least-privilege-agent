@@ -167,11 +167,18 @@ repos follow the same discipline of claims mapped to tests:
 [typed-agent-service](https://github.com/jkelly-dev1/typed-agent-service),
 [agentic-review-gate](https://github.com/jkelly-dev1/agentic-review-gate),
 [temporal-multi-agent](https://github.com/jkelly-dev1/temporal-multi-agent),
-[federated-retrieval-router](https://github.com/jkelly-dev1/federated-retrieval-router).
+[federated-retrieval-router](https://github.com/jkelly-dev1/federated-retrieval-router),
+[hardened-mcp-server](https://github.com/jkelly-dev1/hardened-mcp-server).
 
 [prompt-injection-benchmark](https://github.com/jkelly-dev1/prompt-injection-benchmark) measures the
 control this repo builds: it runs a synthetic attack corpus against defenses
 including this one, and reports what each still lets through.
+
+[hardened-mcp-server](https://github.com/jkelly-dev1/hardened-mcp-server) is
+the layer underneath: it asks whether the tool definition an agent was granted
+access to is still the one that was approved, and deliberately ships no
+authorization and no capability broker because this repo already measures
+both.
 
 ## License
 
