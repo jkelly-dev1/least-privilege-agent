@@ -1,0 +1,1 @@
+A clear policy for what an AI agent may do unsupervised, and what bounds the blast radius when it is wrong. Deny-by-default policy, purpose binding, provenance tagging, opaque handles and an egress allowlist, with a hash-chained decision log. 31-payload attack corpus as the CI gate, and tests that measure which control covers which attack class.
