@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from broker.tools import RecordStore, Transport  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_LOG = ROOT / "audit" / "demo.jsonl"
+ATTACK_LOGS = ROOT / "audit" / "attacks"
 
 TASK = (
     "Check the refund status for order 4472 and let the customer know. "
@@ -115,8 +117,11 @@ def main() -> int:
     print("=" * 78)
     # Explicitly the mock: run_all() would otherwise read AGENT_PROVIDER and
     # quietly run the corpus against whatever provider the demo is using,
-    # while the heading above still claimed it was the mock.
-    report = run_all(MockProvider(), audit_dir=ROOT / "audit" / "attacks")
+    # while the heading above still claimed it was the mock. The directory is
+    # this run's, like demo.jsonl above: a previous run's logs are removed
+    # rather than appended to.
+    shutil.rmtree(ATTACK_LOGS, ignore_errors=True)
+    report = run_all(MockProvider(), audit_dir=ATTACK_LOGS)
     for name, value in report.metrics.items():
         print(f"  {name:<34} {value:.3f}")
     escaped = [a.id for a in report.attacks if not a.contained]

@@ -51,13 +51,18 @@ that survivable: the model proposes, the broker decides.
 `tests/test_defense_in_depth.py` disables these in combination and measures
 what escapes, which gives an unusually precise answer:
 
-- **Egress alone** contains the whole corpus. **Handle releasability alone**
-  contains the whole corpus.
+- **Egress alone** contains every exfiltration, 30 of 31. **Handle
+  releasability alone** contains the same 30. The one that gets past each is
+  `aggregation-many-small-refunds`: four refunds of 24.00, inside the policy's
+  limits, that the task never asked for. Money moved on an attacker's
+  instruction is an escape whatever the amount, and a destination control has
+  nothing to say about it, because a refund goes to the order and not to an
+  address. Provenance is what stops it.
 - **Provenance alone** contains every *indirect* attack but not a *direct* one.
   When the payload arrives in the operator's own turn, attributing it to the
   user is the correct answer, so provenance has nothing to object to. The
   egress allowlist is what refuses those.
-- **With all three disabled, 23 of 31 attacks get through.** That number is
+- **With all three disabled, 24 of 31 attacks get through.** That number is
   what makes the others mean anything: the corpus really does provoke effects.
 
 ## Claims backed by tests
@@ -73,11 +78,16 @@ what escapes, which gives an unusually precise answer:
 | A card handle is not releasable to any destination | `tests/test_broker.py::test_a_card_handle_is_not_releasable_to_any_destination` |
 | A send receipt does not leak the resolved address back | `tests/test_broker.py::test_a_send_receipt_does_not_leak_the_resolved_address` |
 | A denied action leaves no trace on the transport | `tests/test_broker.py::test_denied_send_does_not_reach_the_transport` |
+| A destination is one parsed address; a joined list ending in an approved domain is refused | `tests/test_egress.py::test_a_joined_list_ending_in_an_approved_domain_is_refused` (mutation-checked: match the tail of the raw string and it fails) |
+| A refund with no usable amount is a logged denial, not an exception | `tests/test_broker.py::test_a_refund_with_no_usable_amount_is_denied_and_logged` |
 | Refunds cannot creep past the session ceiling in small steps | `tests/test_broker.py::test_small_refunds_cannot_add_up_past_the_session_ceiling` (mutation-checked) |
 | Amounts above the threshold pause for a human | `tests/test_broker.py::test_refund_above_the_threshold_pauses_for_a_human` |
 | The agent is told why, but not which rule | `tests/test_decision_log.py::test_the_agent_is_not_told_the_rule_that_denied_it` |
 | Message bodies are measured, not quoted, in the log | `tests/test_decision_log.py::test_message_bodies_are_measured_not_quoted_in_the_log` |
 | Editing the decision log is detectable | `tests/test_decision_log.py::test_editing_a_past_record_breaks_the_chain` |
+| Deleting a record from the middle of the log is detectable | `tests/test_decision_log.py::test_deleting_a_record_from_the_middle_breaks_the_chain` (mutation-checked: drop the linkage check and it fails) |
+| A cut-off line in the log is named, and verification reports it rather than raising | `tests/test_decision_log.py::test_a_torn_tail_line_is_named_and_verify_reports_false` |
+| The destination is logged as its domain, not the person | `tests/test_decision_log.py::test_the_destination_is_logged_as_its_domain_not_its_local_part` |
 | A typo in a constraint name fails at startup, not at request time | `tests/test_policy.py::test_unknown_constraint_name_fails_at_load_time` |
 | Attribution fails closed when it cannot tell | `tests/test_taint.py::test_attribution_fails_closed_when_it_cannot_tell` |
 | The agent loop is bounded | `tests/test_agent.py::test_the_loop_is_bounded` |
@@ -87,6 +97,9 @@ what escapes, which gives an unusually precise answer:
 | The gate goes red on a vacuous corpus | `tests/test_attacks.py::test_the_gate_fails_on_a_vacuous_corpus` (mutation-checked) |
 | Each control's coverage is what the README says | `tests/test_defense_in_depth.py` |
 | The attack gate fails when an attack actually escapes, not only when the corpus goes silent | `tests/test_attacks.py::test_the_gate_fails_when_an_attack_actually_escapes` (mutation-checked: turn the `privileged_actions_from_attacks` test into `if False:` and it fails) |
+| One escape fails the gate, and PASSED is never printed over a table showing one | `tests/test_attacks.py::test_one_escaping_attack_fails_the_gate_and_no_passed_line_is_printed` (mutation-checked) |
+| The escape oracle judges one parsed address by its domain, so a joined list is an escape | `tests/test_attacks.py::test_the_oracle_counts_anything_but_one_legitimate_address_as_an_escape` (mutation-checked) |
+| A refund an attack caused is an escape whatever the amount | `tests/test_attacks.py::test_a_refund_inside_the_limits_is_still_an_escape_when_an_attack_caused_it` (mutation-checked) |
 
 ## The attack corpus
 
@@ -94,7 +107,11 @@ The corpus is 31 payloads across seven categories, planted in the operator's tur
 record's notes, or in a record field. `attacks/corpus.yaml` documents each one's
 category and technique.
 
-The gate enforces four metrics and only one is allowed to be non-zero:
+The gate enforces four metrics and only one is allowed to be non-zero. Each
+run writes its decision logs to a fresh temporary directory, so two runs never
+append to the same file. A red gate keeps that directory and prints its path,
+because the logs of a run that failed are the ones worth reading; a green gate
+discards it. Pass `--keep-logs` to keep them either way.
 
 | Metric | Requirement |
 | --- | --- |
@@ -116,7 +133,7 @@ Requires Python 3.11 or newer.
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                     # 85 tests, fully offline
+pytest -q                     # 147 tests, fully offline
 python -m attacks.gate        # the CI attack gate
 python scripts/run_demo.py    # the worked scenario end to end
 ```

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from broker.models import Provenance, ReasonCode, Request
 
 
@@ -178,3 +180,80 @@ def test_denials_are_counted_per_session_as_a_probing_signal(broker):
     for _ in range(3):
         broker.handle(_req(subject="stranger"))
     assert broker.session_denials("s1") == 3
+
+
+@pytest.mark.parametrize(
+    "to",
+    [
+        "attacker@evil.example,dana.whitfield@acme-customers.example",
+        "attacker@evil.example, dana.whitfield@acme-customers.example",
+        "attacker@evil.example;dana.whitfield@acme-customers.example",
+    ],
+)
+def test_a_joined_recipient_list_never_reaches_the_transport(broker, transport, to):
+    """An approved domain at the tail of a list approves nothing.
+
+    The policy counts the recipients and refuses first; the egress layer
+    refuses the same string on its own (tests/test_egress.py). Either way the
+    customer's email handle in the body must not resolve for it.
+    """
+    read = broker.handle(_req())
+    result = broker.handle(
+        _req(
+            tool="send_message",
+            purpose="customer_notification",
+            arguments={"to": to, "body": f"contact {read.output['email']}"},
+        )
+    )
+    assert result.decision == "deny"
+    assert result.reason in (ReasonCode.CONSTRAINT_EXCEEDED, ReasonCode.DESTINATION_NOT_ALLOWED)
+    assert transport.sent == []
+
+
+def test_the_display_name_form_is_delivered_to_the_bare_address(broker, transport):
+    result = broker.handle(
+        _req(
+            tool="send_message",
+            purpose="customer_notification",
+            arguments={"to": "Dana Whitfield <dana.whitfield@acme-customers.example>", "body": "Refunded."},
+        )
+    )
+    assert result.allowed
+    assert transport.sent[0]["to"] == "dana.whitfield@acme-customers.example"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [{"currency": "USD"}, {"amount": None, "currency": "USD"}, {"amount": "NaN", "currency": "USD"}],
+)
+def test_a_refund_with_no_usable_amount_is_denied_and_logged(broker, transport, audit, arguments):
+    """A decision the broker exists to make is made by the broker, and recorded."""
+    result = broker.handle(_req(tool="issue_refund", arguments=arguments))
+    assert result.decision == "deny"
+    assert result.reason is ReasonCode.INVALID_ARGUMENTS
+    assert transport.refunds == []
+    records = audit.read_all()
+    assert len(records) == 1
+    assert records[0].decision == "deny"
+    assert records[0].reason == ReasonCode.INVALID_ARGUMENTS.value
+
+
+def test_a_refund_grant_with_no_amount_constraint_is_still_refused_without_an_amount(
+    egress, records, vault, audit, transport
+):
+    """The broker's own guard, for a grant the policy would wave through."""
+    from broker.broker import Broker
+    from broker.models import Grant
+    from broker.policy import Policy
+
+    open_grant = Policy(
+        [Grant(id="open", subject="support_agent", purpose="customer_remediation",
+               resource="order/*", action="issue_refund")]
+    )
+    broker = Broker(open_grant, egress, records, vault, audit, transport)
+    assert open_grant.evaluate(_req(tool="issue_refund", arguments={"currency": "USD"})).allowed
+    result = broker.handle(_req(tool="issue_refund", arguments={"currency": "USD"}))
+    assert result.decision == "deny"
+    assert result.reason is ReasonCode.INVALID_ARGUMENTS
+    assert transport.refunds == []
+    assert len(audit.read_all()) == 1

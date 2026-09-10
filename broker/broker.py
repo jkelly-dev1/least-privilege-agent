@@ -23,12 +23,13 @@ proves, the difference between a policy engine and a suggestion.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlparse
 
 from broker import provenance
 from broker.audit import AuditLog
-from broker.egress import EgressPolicy
+from broker.egress import EgressPolicy, parse_recipient
 from broker.handles import HandleVault
 from broker.models import (
     BrokerResult,
@@ -146,9 +147,13 @@ class Broker:
                 return self._deny(
                     request,
                     ReasonCode.DESTINATION_NOT_ALLOWED,
-                    f"destination not on the allowlist: {destination}",
+                    f"destination not on the allowlist: {_summarize_destination(destination)}",
                     rule_id,
                 )
+            # The transport is handed the one address the allowlist approved,
+            # not the string it was written in: "Dana <dana@...>" is delivered
+            # to dana@... and nothing else rides along.
+            destination = parse_recipient(destination or "") or destination
 
         return self._execute(request, rule_id, destination)
 
@@ -202,7 +207,14 @@ class Broker:
             )
 
         if tool == "issue_refund":
-            amount = Decimal(str(args.get("amount")))
+            amount = _finite_amount(args.get("amount"))
+            if amount is None:
+                # The policy refuses this first when its grant limits an
+                # amount. A grant with no amount constraint reaches here, and
+                # the answer is still a logged denial, never an exception.
+                return self._deny(
+                    request, ReasonCode.INVALID_ARGUMENTS, "amount is missing or not a number", rule_id
+                )
             output = self.transport.issue_refund(
                 str(args.get("order_id") or request.resource.split("/")[-1]),
                 str(amount),
@@ -284,12 +296,46 @@ def _handles_in(text: str) -> list[str]:
     return [word.strip(".,;:()[]") for word in text.split() if word.startswith("hdl_")]
 
 
+def _finite_amount(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return amount if amount.is_finite() and amount > 0 else None
+
+
 def _summarize(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Log-safe argument summary. Bodies are measured, never quoted."""
+    """Log-safe argument summary.
+
+    Bodies are measured, never quoted. A destination keeps the part the
+    allowlist decided on and loses the part that identifies a person: the
+    domain of an address is logged and its local part is not, a URL is logged
+    as its host, and a handle is logged as the handle it already is. An
+    address is a sensitive field on the way in, so it is not written in the
+    clear on the way out.
+    """
     summary: dict[str, Any] = {}
     for key, value in arguments.items():
         if key in ("body", "text"):
             summary[key] = f"<{len(str(value))} chars>"
+        elif key == "to":
+            summary[key] = _summarize_destination(value)
         else:
             summary[key] = value
     return summary
+
+
+def _summarize_destination(value: Any) -> str:
+    """An address as ***@domain, a URL as its host, a handle as itself."""
+    text = str(value or "")
+    if text.startswith("hdl_"):
+        return text
+    address = parse_recipient(text)
+    if address is not None:
+        return "***@" + address.rpartition("@")[2]
+    if "://" in text:
+        host = urlparse(text.strip().lower()).hostname or ""
+        return f"<url host {host}>" if host else "<url>"
+    return f"<{len(text)} chars>"

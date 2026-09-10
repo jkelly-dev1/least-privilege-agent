@@ -161,3 +161,54 @@ def test_an_empty_policy_is_valid_and_grants_nothing(tmp_path):
     path.write_text("grants: []\n", encoding="utf-8")
     empty = Policy.from_yaml(path)
     assert not empty.evaluate(_request()).allowed
+
+
+@pytest.mark.parametrize(
+    "to",
+    [
+        "attacker@evil.example,dana.whitfield@acme-customers.example",
+        "attacker@evil.example; dana.whitfield@acme-customers.example",
+        ["attacker@evil.example", "dana.whitfield@acme-customers.example"],
+    ],
+)
+def test_a_joined_recipient_string_counts_every_recipient(policy, to):
+    """max_recipients: 1 is a count of addresses, not of strings."""
+    match = policy.evaluate(
+        _request(
+            tool="send_message",
+            purpose="customer_notification",
+            arguments={"to": to, "body": "x"},
+        )
+    )
+    assert not match.allowed
+    assert match.reason is ReasonCode.CONSTRAINT_EXCEEDED
+    assert "recipients" in match.detail
+
+
+def test_one_recipient_in_the_display_name_form_is_one_recipient(policy):
+    match = policy.evaluate(
+        _request(
+            tool="send_message",
+            purpose="customer_notification",
+            arguments={"to": "Dana <dana.whitfield@acme-customers.example>", "body": "x"},
+        )
+    )
+    assert match.allowed
+
+
+@pytest.mark.parametrize(
+    "arguments, detail",
+    [
+        ({"currency": "USD"}, "amount is required"),
+        ({"amount": None, "currency": "USD"}, "amount is required"),
+        ({"amount": "NaN", "currency": "USD"}, "amount is not finite"),
+        ({"amount": "sNaN", "currency": "USD"}, "amount is not finite"),
+        ({"amount": "Infinity", "currency": "USD"}, "amount is not finite"),
+    ],
+)
+def test_a_refund_with_no_usable_amount_is_a_denial_not_an_exception(policy, arguments, detail):
+    """The grant limits an amount, so a request naming none is decided, not raised."""
+    match = policy.evaluate(_request(tool="issue_refund", arguments=arguments))
+    assert not match.allowed
+    assert match.reason is ReasonCode.INVALID_ARGUMENTS
+    assert match.detail == detail

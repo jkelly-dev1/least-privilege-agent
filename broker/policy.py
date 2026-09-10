@@ -11,6 +11,7 @@ than mid-request, when the failure would be a denial nobody planned.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal, InvalidOperation
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -32,6 +33,13 @@ KNOWN_CONSTRAINTS = frozenset(
         "require_human_approval_above",
         "max_recipients",
     }
+)
+
+
+#: Constraints that limit an amount. A grant carrying any of these requires the
+#: request to name one.
+AMOUNT_CONSTRAINTS = frozenset(
+    {"max_amount", "currency", "per_session_total", "require_human_approval_above"}
 )
 
 
@@ -142,21 +150,30 @@ class Policy:
         amount_raw = request.arguments.get("amount")
 
         if "max_recipients" in constraints:
-            recipients = request.arguments.get("to") or []
-            if isinstance(recipients, str):
-                recipients = [recipients]
-            if len(recipients) > int(constraints["max_recipients"]):
+            recipients = _recipient_count(request.arguments.get("to"))
+            if recipients > int(constraints["max_recipients"]):
                 return Match(
                     None,
                     ReasonCode.CONSTRAINT_EXCEEDED,
                     f"more than {constraints['max_recipients']} recipients",
                 )
 
+        if amount_raw is None and AMOUNT_CONSTRAINTS & set(constraints):
+            # The grant limits an amount, so a request that names none cannot
+            # be checked against it. That is a decision, refused and logged,
+            # rather than an exception raised somewhere downstream.
+            return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount is required")
+
         if amount_raw is not None:
             try:
                 amount = Decimal(str(amount_raw))
             except (InvalidOperation, ValueError):
                 return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount is not a number")
+            if not amount.is_finite():
+                # NaN compares as nothing and Infinity exceeds every cap; both
+                # are refused here as arguments so the comparisons below only
+                # ever see a number.
+                return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount is not finite")
             if amount <= 0:
                 return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount must be positive")
 
@@ -200,6 +217,24 @@ class Policy:
                     )
 
         return Match(grant, ReasonCode.ALLOWED)
+
+
+def _recipient_count(value: Any) -> int:
+    """How many recipients a `to` argument names.
+
+    A list counts its members. A string counts one per comma- or
+    semicolon-separated part, so "a@x.example,b@y.example" is two recipients
+    and not one string that happens to end in an approved domain. A display
+    name containing a comma is counted as two as well: this check fails
+    closed, and the egress layer refuses that form independently.
+    """
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return len([part for part in re.split(r"[,;]", value) if part.strip()])
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1
 
 
 def _as_decimal(value: Any, grant_id: str, field: str) -> Decimal:
