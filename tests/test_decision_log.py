@@ -185,7 +185,7 @@ def _append_in_this_process(path_str: str, count: int) -> None:
     """A separate PROCESS appending to the same log file.
 
     Module level because a child has to be able to reach it. It builds its own
-    record rather than calling `_record()` so that nothing here depends on the
+    record instead of calling `_record()` so that nothing here depends on the
     parent's fixtures.
     """
     from broker.audit import AuditLog
@@ -211,7 +211,7 @@ def test_two_processes_appending_do_not_fork_the_chain(tmp_path):
     same tail and both claim it as `prev_hash`, one record's hash appears twice
     and the chain forks.
 
-    A FORKED CHAIN HAS THE RIGHT NUMBER OF LINES, so the count, the chain and
+    A forked chain has the right number of lines, so the count, the chain and
     the uniqueness of `prev_hash` are asserted separately. With `fcntl.flock`
     defeated and everything else identical, every line is still written and
     `verify_chain()` returns False.
@@ -236,8 +236,8 @@ def test_two_processes_appending_do_not_fork_the_chain(tmp_path):
     records = log.read_all()
     assert len(records) == writers * per_writer
 
-    # THE CHAIN, and not merely the line count. A forked chain has the right
-    # number of lines -- that is what makes it worth asserting on separately.
+    # The chain, and not only the line count. A forked chain has the right
+    # number of lines, which is what makes it worth asserting on separately.
     assert log.verify_chain()
     prevs = [r.prev_hash for r in records]
     assert len(set(prevs)) == len(prevs), "a prev_hash was claimed twice"

@@ -119,10 +119,13 @@ class Agent:
             result = self.broker.handle(request)
             run.steps.append(Step(tool, request.provenance, result))
 
-            # A record's own text is untrusted from here on. Everything the
-            # agent proposes afterwards is attributed accordingly.
+            # Every field of a record is untrusted from here on, not only its
+            # notes: an instruction planted in the customer name is the same
+            # attack. Everything the agent proposes afterwards is attributed
+            # accordingly, and a record with every field empty still taints.
             if result.allowed and tool == "read_record" and isinstance(result.output, dict):
-                taint.ingest_untrusted(str(result.output.get("notes") or ""))
+                taint.ingest_untrusted(
+                    json.dumps(result.output, sort_keys=True, default=str))
 
             messages.append(
                 {

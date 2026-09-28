@@ -12,7 +12,7 @@ The rule, in order:
    to the operator's own instruction. Otherwise it is UNTRUSTED_CONTENT.
 
 Consequential arguments are the ones that decide who is affected and by how
-much: the recipient and the amount. Body text is not consequential for this
+much: the recipient, the amount and the order. Body text is not consequential for this
 purpose; an attacker who can only change wording has not gained a capability.
 
 This is a heuristic operating at Boundary A, and the threat model is explicit
@@ -91,5 +91,8 @@ class TaintTracker:
             return True
         value_tokens = _tokens(value)
         if not value_tokens:
-            return True
+            # A value with no token this tokenizer can read (an amount in
+            # Arabic-Indic digits, say) cannot be traced to anything, and
+            # untraceable is untrusted: the rule fails closed.
+            return False
         return value_tokens <= self._instruction_tokens

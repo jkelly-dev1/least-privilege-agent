@@ -1,4 +1,4 @@
-"""End to end demo: the worked scenario, then the attack corpus summary.
+"""The whole demo: the worked scenario, then the attack corpus summary.
 
     python scripts/run_demo.py
     ENV_FILE=~/.secrets/ai.env AGENT_PROVIDER=anthropic python scripts/run_demo.py
@@ -116,7 +116,7 @@ def main() -> int:
     print("Attack corpus (always runs on the deterministic mock)")
     print("=" * 78)
     # Explicitly the mock: run_all() would otherwise read AGENT_PROVIDER and
-    # quietly run the corpus against whatever provider the demo is using,
+    # silently run the corpus against whatever provider the demo is using,
     # while the heading above still claimed it was the mock. The directory is
     # this run's, like demo.jsonl above: a previous run's logs are removed
     # rather than appended to.

@@ -3,8 +3,7 @@
 The split that matters: `BrokerResult` is what the agent sees, `DecisionRecord`
 is what the log sees. The agent gets a coarse reason code so it can adapt; the
 rule that decided, the matched grant, and the arguments go to the log only.
-Denial feedback is a probing oracle, so the two are deliberately not the same
-object.
+Denial feedback is a probing oracle, so the two are not the same object.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ DecisionType = Literal["allow", "redact", "deny", "needs_approval"]
 
 
 class ReasonCode(str, Enum):
-    """Agent-visible reason codes. Coarse on purpose.
+    """Agent-visible reason codes. Coarse.
 
     These tell an agent enough to change course and not enough to map the
     policy one denial at a time.

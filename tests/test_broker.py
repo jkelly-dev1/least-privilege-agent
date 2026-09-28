@@ -1,4 +1,4 @@
-"""End to end through the decision point: what the agent gets, and what the
+"""Through the decision point: what the agent gets, and what the
 transport gets. The gap between those two is what these tests measure."""
 
 from __future__ import annotations
@@ -257,3 +257,42 @@ def test_a_refund_grant_with_no_amount_constraint_is_still_refused_without_an_am
     assert result.reason is ReasonCode.INVALID_ARGUMENTS
     assert transport.refunds == []
     assert len(audit.read_all()) == 1
+
+
+def test_one_broker_scopes_handles_to_each_session(broker, transport):
+    """A broker serves many sessions through one vault. The same value read in
+    two sessions gets two handles, and a handle is refused in a session it was
+    not issued to."""
+    a = broker.handle(_req(session_id="session-A")).output["email"]
+    b = broker.handle(_req(session_id="session-B")).output["email"]
+    assert a != b
+    result = broker.handle(_req(
+        purpose="customer_notification", tool="send_message",
+        session_id="session-C", arguments={"to": a, "body": "hello"}))
+    assert result.decision == "deny"
+    assert result.reason is ReasonCode.HANDLE_NOT_RESOLVABLE
+    assert transport.sent == []
+    same = broker.handle(_req(
+        purpose="customer_notification", tool="send_message",
+        session_id="session-A", arguments={"to": a, "body": "hello"}))
+    assert same.decision == "allow"
+
+
+def test_a_recipient_handle_is_refused_where_its_field_is_not_releasable(
+        policy, records, vault, audit, transport):
+    """The address is on the allowlist; the email field is not releasable to
+    it. The handle must not resolve, even though the resolved address would
+    pass the allowlist on its own."""
+    from broker.broker import Broker
+    from broker.egress import EgressPolicy
+    egress = EgressPolicy(allowed_recipients=["*@acme-customers.example"],
+                          resolvable_fields={})
+    broker = Broker(policy, egress, records, vault, audit, transport)
+    handle = broker.handle(_req()).output["email"]
+    result = broker.handle(_req(
+        purpose="customer_notification", tool="send_message",
+        arguments={"to": handle, "body": "hello"}))
+    assert result.decision == "deny"
+    assert result.reason is ReasonCode.HANDLE_NOT_RESOLVABLE
+    assert "not releasable" in audit.read_all()[-1].detail
+    assert transport.sent == []

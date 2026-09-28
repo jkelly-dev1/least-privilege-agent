@@ -204,6 +204,10 @@ def test_one_recipient_in_the_display_name_form_is_one_recipient(policy):
         ({"amount": "NaN", "currency": "USD"}, "amount is not finite"),
         ({"amount": "sNaN", "currency": "USD"}, "amount is not finite"),
         ({"amount": "Infinity", "currency": "USD"}, "amount is not finite"),
+        # The number 24 in Arabic-Indic digits: a number to Decimal, no token
+        # to the taint tracker.
+        ({"amount": "\u0662\u0664", "currency": "USD"},
+         "amount must be written in ASCII digits"),
     ],
 )
 def test_a_refund_with_no_usable_amount_is_a_denial_not_an_exception(policy, arguments, detail):

@@ -59,3 +59,22 @@ def test_a_recipient_pattern_that_is_not_a_domain_wildcard_fails_at_load():
         EgressPolicy(allowed_recipients=["*acme-customers.example"])
     with pytest.raises(EgressError, match="one address or"):
         EgressPolicy(resolvable_fields={"*customers.example": ["email"]})
+
+
+def test_a_host_pattern_must_be_a_host_or_a_labelled_wildcard():
+    """"*acme.example" matched evilacme.example as a string suffix."""
+    from broker.egress import EgressError, EgressPolicy
+    with pytest.raises(EgressError, match="host pattern"):
+        EgressPolicy(allowed_hosts=["*acme.example"])
+    policy = EgressPolicy(allowed_hosts=["*.acme.example"])
+    assert policy.destination_allowed("https://api.acme.example/x")
+    assert not policy.destination_allowed("https://evilacme.example/")
+
+
+def test_a_url_keyed_releasability_pattern_matches_its_host():
+    from broker.egress import EgressPolicy
+    policy = EgressPolicy(
+        allowed_hosts=["api.acme.example"],
+        resolvable_fields={"https://api.acme.example": ["email"]})
+    assert policy.fields_resolvable_for("https://api.acme.example/x") == {"email"}
+    assert policy.fields_resolvable_for("https://evil.example/x") == set()

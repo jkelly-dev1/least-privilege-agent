@@ -113,7 +113,7 @@ class AuditLog:
     def append(self, record: DecisionRecord) -> DecisionRecord:
         """Append one record, chained onto what the file ends with RIGHT NOW.
 
-        THE LOCK SPANS THE READ AS WELL AS THE WRITE, and that span is the
+        The lock spans the read as well as the write, and that span is the
         whole of it. Reading the tail, hashing against it and appending are one
         critical section: a lock around the write alone leaves two processes
         free to read the same tail and then take turns writing, so both records
@@ -126,7 +126,7 @@ class AuditLog:
         descriptor = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
-            # EVERYTHING BELOW IS INSIDE THE LOCK. The cache is keyed on file
+            # Everything below is inside the lock. The cache is keyed on file
             # size, so a tail read before another writer grew the file is
             # re-read here rather than chained onto.
             record.prev_hash = self.last_hash()
@@ -136,10 +136,10 @@ class AuditLog:
             while written < len(payload):
                 written += os.write(descriptor, payload[written:])
             os.fsync(descriptor)
-            # STAT INSIDE THE LOCK. Taken after the close, another process
+            # Stat inside the lock. Taken after the close, another process
             # could append first and the cache would then hold that writer's
-            # size against OUR hash -- a stale tail that chains the next
-            # record onto a record that is no longer last.
+            # size against OUR hash: a stale tail that chains the next record
+            # onto a record that is no longer last.
             size = os.fstat(descriptor).st_size
         finally:
             os.close(descriptor)   # releases the lock

@@ -43,7 +43,7 @@ from broker.tools import SENSITIVE_FIELDS, RecordStore, Transport
 
 KNOWN_TOOLS = frozenset({"read_record", "send_message", "write_note", "issue_refund"})
 
-#: Messages the agent sees. Coarse by design: enough to change course, not
+#: Messages the agent sees. Coarse: enough to change course, not
 #: enough to enumerate the policy one denial at a time.
 AGENT_MESSAGES = {
     ReasonCode.NO_GRANT: "Not permitted for this subject.",
@@ -125,8 +125,8 @@ class Broker:
             # against the allowlist: the allowlist governs real addresses, not
             # opaque tokens.
             if self.vault.is_handle(raw_destination):
-                resolved = self.vault.resolve(raw_destination)
-                field = self.vault.field_of(raw_destination)
+                resolved = self.vault.resolve(raw_destination, request.session_id)
+                field = self.vault.field_of(raw_destination, request.session_id)
                 if resolved is None:
                     return self._deny(
                         request,
@@ -176,7 +176,7 @@ class Broker:
                 return self._deny(request, ReasonCode.INVALID_ARGUMENTS, "no such order")
             # The agent never sees a raw sensitive value: it sees handles it can
             # pass back to the broker, which is enough to do the job.
-            safe = self.vault.redact(record, set(SENSITIVE_FIELDS))
+            safe = self.vault.redact(record, set(SENSITIVE_FIELDS), request.session_id)
             self._record(request, "redact", ReasonCode.ALLOWED, "record redacted", rule_id)
             return BrokerResult(
                 decision="redact", reason=ReasonCode.ALLOWED, output=safe
@@ -185,7 +185,7 @@ class Broker:
         if tool == "send_message":
             body = str(args.get("body") or "")
             resolved_to = destination or ""
-            body, ok = self._resolve_body(resolved_to, body)
+            body, ok = self._resolve_body(resolved_to, body, request.session_id)
             if not ok:
                 return self._deny(
                     request,
@@ -236,13 +236,14 @@ class Broker:
 
         return self._deny(request, ReasonCode.UNKNOWN_TOOL, "unreachable")
 
-    def _resolve_body(self, destination: str, body: str) -> tuple[str, bool]:
+    def _resolve_body(self, destination: str, body: str,
+                      session_id: str | None = None) -> tuple[str, bool]:
         allowed_fields = self.egress.fields_resolvable_for(destination)
         for token in sorted(set(_handles_in(body))):
-            field = self.vault.field_of(token)
+            field = self.vault.field_of(token, session_id)
             if field is None or field not in allowed_fields:
                 return body, False
-            body = body.replace(token, self.vault.resolve(token) or "")
+            body = body.replace(token, self.vault.resolve(token, session_id) or "")
         return body, True
 
     def _deny(

@@ -22,8 +22,11 @@ from pydantic import ValidationError
 
 from broker.models import Grant, ReasonCode, Request
 
+# An amount as the policy accepts it: ASCII digits, an optional fraction.
+_PLAIN_AMOUNT = re.compile(r"[0-9]+(\.[0-9]+)?")
+
 # Every constraint key the evaluator understands. An unknown key is a policy
-# authoring error, not something to skip quietly: a typo in a constraint name
+# authoring error, not something to skip silently: a typo in a constraint name
 # would otherwise silently widen the grant.
 KNOWN_CONSTRAINTS = frozenset(
     {
@@ -176,6 +179,14 @@ class Policy:
                 return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount is not finite")
             if amount <= 0:
                 return Match(None, ReasonCode.INVALID_ARGUMENTS, "amount must be positive")
+            if not _PLAIN_AMOUNT.fullmatch(str(amount_raw).strip()):
+                # Decimal accepts any Unicode digit, so "\u0662\u0664" is 24 to
+                # the arithmetic while the taint tracker cannot read it.
+                return Match(
+                    None,
+                    ReasonCode.INVALID_ARGUMENTS,
+                    "amount must be written in ASCII digits",
+                )
 
             currency = constraints.get("currency")
             if currency and request.arguments.get("currency") != currency:
@@ -222,10 +233,10 @@ class Policy:
 def _recipient_count(value: Any) -> int:
     """How many recipients a `to` argument names.
 
-    A list counts its members. A string counts one per comma- or
-    semicolon-separated part, so "a@x.example,b@y.example" is two recipients
-    and not one string that happens to end in an approved domain. A display
-    name containing a comma is counted as two as well: this check fails
+    A list counts its members. For a string, each comma- or
+    semicolon-separated part counts once, so "a@x.example,b@y.example" is two
+    recipients and not one string that happens to end in an approved domain.
+    Even a display name containing a comma is counted as two: this check fails
     closed, and the egress layer refuses that form independently.
     """
     if value is None:

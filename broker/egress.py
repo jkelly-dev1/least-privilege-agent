@@ -72,11 +72,22 @@ class EgressPolicy:
         # destination pattern -> fields whose handles may be resolved for it
         self.resolvable_fields = resolvable_fields or {}
         for pattern in self.allowed_recipients + [p.lower() for p in self.resolvable_fields]:
-            if "://" in pattern or _recipient_pattern_ok(pattern):
+            if "://" in pattern:
+                if _host_pattern_ok(urlparse(pattern).hostname or ""):
+                    continue
+                raise EgressError(
+                    f"URL pattern {pattern!r} must name a host or '*.<domain>'")
+            if _recipient_pattern_ok(pattern):
                 continue
             raise EgressError(
                 f"recipient pattern {pattern!r} must be one address or '*@<domain>'"
             )
+        # Host patterns get the same load-time check. "*acme.example" would
+        # otherwise match evilacme.example as a string suffix.
+        for pattern in self.allowed_hosts:
+            if not _host_pattern_ok(pattern):
+                raise EgressError(
+                    f"host pattern {pattern!r} must be one host or '*.<domain>'")
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "EgressPolicy":
@@ -122,9 +133,21 @@ class EgressPolicy:
             pattern = pattern.lower()
             if address is not None and _address_matches(address, pattern):
                 fields.update(allowed)
-            elif host is not None and "://" in pattern and _matches(host, pattern):
+            elif (host is not None and "://" in pattern
+                  and _matches(host, (urlparse(pattern).hostname or "").lower())):
+                # The key is a URL; its HOST is what a destination's host is
+                # compared with. Comparing the whole key could never match.
                 fields.update(allowed)
         return fields
+
+
+_HOST = r"[a-z0-9-]+(?:\.[a-z0-9-]+)+"
+
+
+def _host_pattern_ok(pattern: str) -> bool:
+    """One host, or '*.' followed by one: the wildcard stands for labels."""
+    body = pattern[2:] if pattern.startswith("*.") else pattern
+    return re.fullmatch(_HOST, body) is not None
 
 
 def _recipient_pattern_ok(pattern: str) -> bool:

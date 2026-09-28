@@ -36,22 +36,61 @@ class Provider(Protocol):
     def propose(self, *, messages: list[dict[str, str]]) -> str: ...
 
 
+def _brace_span_end(text: str, at: int) -> int:
+    """Index just past the brace span opening at `at`, or -1 if it never
+    closes. Braces inside JSON strings do not count."""
+    depth, in_str, esc = 0, False, False
+    for i in range(at, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return -1
+
+
 def parse_proposal(raw: str) -> dict[str, Any]:
-    """Tolerant parse. Unparseable output ends the turn rather than raising."""
+    """Tolerant parse. Unparseable output ends the turn instead of raising."""
     text = (raw or "").strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
         text = re.sub(r"\n?```$", "", text).strip()
-    if not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end <= start:
-            return {"done": True, "answer": text[:200]}
-        text = text[start : end + 1]
-    try:
-        payload = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return {"done": True, "answer": "unparseable model output"}
-    return payload if isinstance(payload, dict) else {"done": True, "answer": ""}
+    if "{" not in text:
+        return {"done": True, "answer": text[:200]}
+    # The FIRST complete object, tried from each "{" in turn. One span from the
+    # first "{" to the last "}" fails on a reply carrying two objects, or on a
+    # braced word in prose before the object, and the turn ended with nothing
+    # to show for it.
+    decoder = json.JSONDecoder()
+    at = text.find("{")
+    while at != -1:
+        try:
+            payload, _ = decoder.raw_decode(text, at)
+        except json.JSONDecodeError:
+            # Resume AFTER this brace span, never inside it: an object nested
+            # in a truncated proposal (its arguments) is not the proposal. A
+            # span that never closes is a truncated reply.
+            end = _brace_span_end(text, at)
+            if end == -1:
+                break
+            at = text.find("{", end)
+            continue
+        if isinstance(payload, dict):
+            return payload
+        at = text.find("{", at + 1)
+    # Kept short: enough to say what the model sent, never the whole reply.
+    return {"done": True, "answer": f"unparseable model output: {text[:120]!r}"}
 
 
 class MockProvider:
